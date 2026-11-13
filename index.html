@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <meta name="description" content="A tone and its first 15 natural harmonics, each on its own fader, played in the browser with the Web Audio API.">
+    <title>Natural Harmonics</title>
+    <link rel="icon" href="favicon.ico" sizes="32x32">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <style>
+        /* ---------- pteroscillator shared standard ---------- */
+        :root {
+            --bg: #000;
+            --surface: #0a0a0a;
+            --surface-2: #141414;
+            --line: #1a1a1a;
+            --border: #4d4d4d;
+            --border-hover: #999;
+            --text-dim: #808080;
+            --text-mid: #ccc;
+            --text: #fff;
+            --hover-bg: #0d0d0d;
+            --active-bg: #1a1a1a;
+            --danger-bg: #1a0000;
+            --danger-border: #800000;
+            --danger-text: #ff6666;
+            --danger-hover-bg: #330000;
+            --danger-hover-border: #cc0000;
+            --mute-bg: #1a1100;
+            --mute-border: #805300;
+            --mute-text: #ffaa66;
+            --mute-hover-bg: #332100;
+            --mute-hover-border: #cc8400;
+            --mute-active-bg: #4d3200;
+            --mute-active-border: #ffa500;
+            --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            --edge: 40px;
+            --header-h: 116px;
+            --panel-top: 84px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        button, input, select, a {
+            font-family: inherit;
+        }
+
+        button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+            outline: 1px solid var(--text) !important;
+            outline-offset: 2px;
+        }
+
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            padding: calc(var(--edge) + env(safe-area-inset-top, 0px)) calc(var(--edge) + env(safe-area-inset-right, 0px)) 0 calc(var(--edge) + env(safe-area-inset-left, 0px));
+            pointer-events: none;
+        }
+
+        .header > * {
+            pointer-events: auto;
+        }
+
+        .header.solid {
+            background: var(--bg);
+            padding-bottom: 16px;
+        }
+
+        .page-title {
+            font-size: 11px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+
+        .menu-btn {
+            display: block;
+            background: none;
+            border: none;
+            padding: 8px;
+            margin: -8px;
+            color: var(--border-hover);
+            cursor: pointer;
+            line-height: 0;
+            transition: color 0.3s;
+        }
+
+        .menu-btn:hover,
+        .menu-btn[aria-expanded="true"] {
+            color: var(--text);
+            background: none;
+        }
+
+        .menu-btn svg {
+            display: block;
+        }
+
+        .panel {
+            position: fixed;
+            z-index: 101; /* above the header bar */
+            top: calc(var(--panel-top) + env(safe-area-inset-top, 0px));
+            right: calc(var(--edge) + env(safe-area-inset-right, 0px));
+            width: 220px;
+            max-height: calc(100vh - var(--panel-top) - var(--edge));
+            max-height: calc(100dvh - var(--panel-top) - var(--edge) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+            overflow-y: auto;
+            background: rgba(0, 0, 0, 0.85);
+            border: 1px solid var(--line);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .panel[hidden] {
+            display: none;
+        }
+
+        .panel::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .panel::-webkit-scrollbar-thumb {
+            background: var(--border);
+        }
+
+        .qr {
+            display: block;
+            width: 160px;
+            height: 160px;
+            margin: 0 auto;
+        }
+
+        .btn {
+            display: inline-block;
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 20px;
+            font-size: 12px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            text-decoration: none;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            border-color: var(--border-hover);
+            background: var(--hover-bg);
+        }
+
+        .panel .btn {
+            width: 100%;
+        }
+
+        @media (max-width: 768px) {
+            :root {
+                --edge: 16px;
+                --header-h: 56px;
+                --panel-top: 64px;
+            }
+
+            .header {
+                padding-top: calc(10px + env(safe-area-inset-top, 0px));
+            }
+
+            .header.solid {
+                padding-bottom: 10px;
+            }
+
+            .panel {
+                left: calc(var(--edge) + env(safe-area-inset-left, 0px));
+                width: auto;
+            }
+
+            .btn {
+                min-height: 40px;
+            }
+        }
+        /* ---------- end of shared standard ---------- */
+
+        body {
+            background: var(--bg);
+            font-family: var(--font);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            min-height: 100dvh;
+            padding: calc(var(--header-h) + env(safe-area-inset-top, 0px)) 20px calc(40px + env(safe-area-inset-bottom, 0px));
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1600px;
+            position: relative;
+        }
+
+        .controls-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 60px;
+            margin-bottom: 80px;
+        }
+
+        /*
+         * Spacing shrinks with the window so everything fits on smaller screens (e.g. 11" at 1366px).
+         * Fixed widths: 17 faders x 50px + presets 138px + body padding 40px + 20px scrollbar room = 1048px.
+         * The 420px of spacing (16 fader gaps x 20 + master 40 + presets gap 60) is full size from 1468px up.
+         */
+        .content-wrapper {
+            display: flex;
+            gap: clamp(16px, (100vw - 1048px) * 0.1429, 60px);
+            align-items: flex-start;
+            justify-content: center;
+        }
+
+        .presets-column {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            flex-shrink: 0;
+        }
+
+        .preset-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .preset-label {
+            font-size: 11px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        button {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 12px 40px;
+            font-size: 14px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            border-color: var(--border-hover);
+            background: var(--hover-bg);
+        }
+
+        button.active {
+            border-color: var(--text);
+            background: var(--active-bg);
+        }
+
+        /* Start / Stop in the header, 104x36 at every width */
+        button#toggle {
+            width: 104px;
+            height: 36px;
+            padding: 0;
+            font-size: 14px;
+        }
+
+        button.preset-btn {
+            padding: 8px 20px;
+            font-size: 12px;
+            letter-spacing: 1px;
+        }
+
+        .control-horizontal {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .control-horizontal .label {
+            font-size: 11px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            white-space: nowrap;
+        }
+
+        .control-horizontal .slider-container {
+            width: 200px;
+            position: relative;
+            height: 28px;
+            display: flex;
+            align-items: center;
+        }
+
+        /* Horizontal slider: 1px line, 28px hit area */
+        .control-horizontal input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 28px;
+            margin: 0;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .control-horizontal input[type="range"]::-webkit-slider-runnable-track {
+            height: 1px;
+            background: var(--border);
+        }
+
+        .control-horizontal input[type="range"]::-moz-range-track {
+            height: 1px;
+            background: var(--border);
+        }
+
+        .control-horizontal input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 17px;
+            height: 17px;
+            margin-top: -8px; /* (1 - 17) / 2 */
+            border: none;
+            border-radius: 50%;
+            background: var(--text);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .control-horizontal input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .control-horizontal input[type="range"]::-moz-range-thumb {
+            width: 17px;
+            height: 17px;
+            border-radius: 50%;
+            background: var(--text);
+            border: none;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .control-horizontal input[type="range"]::-moz-range-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .control-horizontal .value {
+            font-size: 11px;
+            color: var(--text-dim);
+            width: 50px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .harmonics-row {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            gap: clamp(4px, (100vw - 1048px) * 0.0476, 20px);
+            flex-shrink: 0;
+        }
+
+        .harmonic-fader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 50px;
+        }
+
+        .fader-container {
+            height: 300px;
+            width: 50px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start; /* keep the 49px slider on whole pixels */
+            margin-bottom: 15px;
+        }
+
+        /* Standard vertical slider (Chrome 124+, Safari 17.4+, Firefox 120+) */
+        input[type="range"].vertical {
+            -webkit-appearance: none;
+            appearance: none;
+            writing-mode: vertical-lr;
+            direction: rtl;
+            width: 49px; /* odd width: line (24-25px) and thumb share the same centre in every browser */
+            height: 300px;
+            margin: 0;
+            background: none;
+            cursor: pointer;
+        }
+
+        input[type="range"].vertical::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, var(--bg) 24px, var(--border) 24px, var(--border) 25px, var(--bg) 25px);
+        }
+
+        input[type="range"].vertical::-moz-range-track {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to right, var(--bg) 24px, var(--border) 24px, var(--border) 25px, var(--bg) 25px);
+        }
+
+        input[type="range"].vertical::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 17px;
+            height: 17px;
+            margin-left: 16px; /* (49 - 17) / 2: centre on the track line */
+            border-radius: 50%;
+            background: var(--text);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        input[type="range"].vertical::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        input[type="range"].vertical::-moz-range-thumb {
+            width: 17px;
+            height: 17px;
+            border-radius: 50%;
+            background: var(--text);
+            border: none;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        input[type="range"].vertical::-moz-range-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .harmonic-label {
+            text-align: center;
+        }
+
+        .harmonic-number {
+            font-size: 14px;
+            color: var(--text-mid);
+            margin-bottom: 3px;
+        }
+
+        .harmonic-ratio {
+            font-size: 9px;
+            color: var(--text-dim);
+            margin-bottom: 2px;
+        }
+
+        .harmonic-degree {
+            font-size: 9px;
+            color: var(--text-dim);
+        }
+
+        .harmonic-value {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-top: 8px;
+            margin-bottom: 8px;
+            font-variant-numeric: tabular-nums;
+            width: 100%;
+            text-align: center;
+        }
+
+        .harmonic-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            width: 100%;
+        }
+
+        button.harmonic-btn {
+            padding: 4px 8px;
+            font-size: 11px;
+            letter-spacing: 1px;
+            width: 100%;
+        }
+
+        .master-fader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 50px;
+            margin-right: clamp(10px, (100vw - 1048px) * 0.0952, 40px);
+        }
+
+        .master-fader .harmonic-number {
+            font-size: 14px;
+        }
+
+        button.master-reset {
+            background: var(--danger-bg);
+            border-color: var(--danger-border);
+            color: var(--danger-text);
+        }
+
+        button.master-reset:hover {
+            background: var(--danger-hover-bg);
+            border-color: var(--danger-hover-border);
+        }
+
+        button.master-mute {
+            background: var(--mute-bg);
+            border-color: var(--mute-border);
+            color: var(--mute-text);
+        }
+
+        button.master-mute:hover {
+            background: var(--mute-hover-bg);
+            border-color: var(--mute-hover-border);
+        }
+
+        button.master-mute.active {
+            background: var(--mute-active-bg);
+            border-color: var(--mute-active-border);
+        }
+
+        /*
+         * Below 1118px, where the fader row no longer fits:
+         * faders become horizontal rows, the header becomes a black bar
+         */
+        @media (max-width: 1117px) {
+            body {
+                display: block;
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+
+            /* keep the rows a readable length in wider windows */
+            .container {
+                max-width: 640px;
+                margin: 0 auto;
+            }
+
+            .controls-row {
+                margin: 0 0 24px;
+            }
+
+            .control-horizontal {
+                width: 100%;
+                gap: 12px;
+            }
+
+            .control-horizontal .slider-container {
+                flex: 1;
+                width: auto;
+                height: 44px;
+            }
+
+            .control-horizontal input[type="range"] {
+                height: 44px;
+            }
+
+            .control-horizontal .value {
+                width: 32px;
+            }
+
+            .control-horizontal input[type="range"]::-webkit-slider-thumb,
+            input[type="range"].vertical::-webkit-slider-thumb {
+                width: 25px;
+                height: 25px;
+            }
+
+            .control-horizontal input[type="range"]::-webkit-slider-thumb {
+                margin-top: -12px; /* (1 - 25) / 2 */
+            }
+
+            .control-horizontal input[type="range"]::-moz-range-thumb,
+            input[type="range"].vertical::-moz-range-thumb {
+                width: 25px;
+                height: 25px;
+            }
+
+            .content-wrapper {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 24px;
+            }
+
+            .presets-column {
+                order: -1;
+                flex-direction: row;
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+
+            .preset-group {
+                display: contents;
+            }
+
+            .preset-label {
+                width: 100%;
+                margin-bottom: 0;
+            }
+
+            button.preset-btn {
+                flex: 1 1 auto;
+                min-height: 40px;
+                padding: 8px 12px;
+            }
+
+            .harmonics-row {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0;
+            }
+
+            .harmonic-fader,
+            .master-fader {
+                display: grid;
+                grid-template-columns: 56px 1fr 30px 78px;
+                grid-template-areas: "label slider value buttons";
+                align-items: center;
+                column-gap: 8px;
+                width: 100%;
+                min-height: 52px;
+                margin: 0;
+                border-bottom: 1px solid var(--surface-2);
+            }
+
+            .master-fader {
+                margin-bottom: 12px;
+                border-bottom-color: #404040;
+            }
+
+            .fader-container {
+                grid-area: slider;
+                width: auto;
+                height: 45px;
+                margin: 0;
+            }
+
+            input[type="range"].vertical {
+                writing-mode: horizontal-tb;
+                direction: ltr;
+                width: 100%;
+                height: 45px; /* odd height: line (22-23px) and thumb share the same centre */
+                touch-action: pan-y;
+            }
+
+            input[type="range"].vertical::-webkit-slider-runnable-track {
+                background: linear-gradient(to bottom, var(--bg) 22px, var(--border) 22px, var(--border) 23px, var(--bg) 23px);
+            }
+
+            input[type="range"].vertical::-moz-range-track {
+                background: linear-gradient(to bottom, var(--bg) 22px, var(--border) 22px, var(--border) 23px, var(--bg) 23px);
+            }
+
+            input[type="range"].vertical::-webkit-slider-thumb {
+                margin-left: 0;
+                margin-top: 10px; /* (45 - 25) / 2: centre on the track line */
+            }
+
+            .harmonic-label {
+                grid-area: label;
+                display: grid;
+                grid-template-columns: 24px 1fr;
+                align-items: center;
+                text-align: left;
+            }
+
+            .harmonic-number {
+                grid-row: span 2;
+                margin: 0;
+            }
+
+            .harmonic-ratio {
+                margin: 0;
+            }
+
+            .harmonic-value {
+                grid-area: value;
+                margin: 0;
+                text-align: right;
+            }
+
+            .harmonic-buttons {
+                grid-area: buttons;
+                flex-direction: row;
+                gap: 6px;
+            }
+
+            button.harmonic-btn {
+                width: 36px;
+                height: 36px;
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header solid">
+        <div class="page-title">Natural Harmonics</div>
+        <div class="header-actions">
+            <button id="toggle">Start</button>
+            <button class="menu-btn" id="menuBtn" aria-label="Menu" aria-expanded="false" aria-controls="panel"><svg width="28" height="28" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="20" fill="currentColor"/><rect x="11" y="12.5" width="18" height="3" fill="#000"/><rect x="11" y="18.5" width="18" height="3" fill="#000"/><rect x="11" y="24.5" width="18" height="3" fill="#000"/></svg></button>
+        </div>
+    </header>
+
+    <div class="panel" id="panel" hidden>
+        <img src="pteroscillator-QRcode.svg" class="qr" width="160" height="160" alt="QR code to pteroscillator.github.io">
+        <a class="btn exit-link" href="https://pteroscillator.github.io/">Exit</a>
+    </div>
+
+    <div class="container">
+        <div class="controls-row">
+            <div class="control-horizontal">
+                <div class="label">Base Freq</div>
+                <div class="slider-container">
+                    <input type="range" id="baseFreq" min="20" max="200" value="100">
+                </div>
+                <div class="value" id="baseFreqValue">100</div>
+            </div>
+        </div>
+
+        <div class="content-wrapper">
+        <div class="harmonics-row">
+            <div class="master-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="masterVertical" min="0" max="100" value="50">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">M</div>
+                    <div class="harmonic-ratio" style="visibility: hidden;">1/1</div>
+                    <div class="harmonic-degree" style="visibility: hidden;">1</div>
+                </div>
+                <div class="harmonic-value" id="masterVerticalValue">50</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn master-reset" id="masterReset">R</button>
+                    <button class="harmonic-btn master-mute" id="masterMute">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic0" min="0" max="100" value="100">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">T</div>
+                    <div class="harmonic-ratio">1/1</div>
+                    <div class="harmonic-degree">I</div>
+                </div>
+                <div class="harmonic-value" id="harmonic0Value">100</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset0">R</button>
+                    <button class="harmonic-btn" id="mute0">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic1" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">1</div>
+                    <div class="harmonic-ratio">1/2</div>
+                    <div class="harmonic-degree">VIII</div>
+                </div>
+                <div class="harmonic-value" id="harmonic1Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset1">R</button>
+                    <button class="harmonic-btn" id="mute1">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic2" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">2</div>
+                    <div class="harmonic-ratio">1/3</div>
+                    <div class="harmonic-degree">V</div>
+                </div>
+                <div class="harmonic-value" id="harmonic2Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset2">R</button>
+                    <button class="harmonic-btn" id="mute2">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic3" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">3</div>
+                    <div class="harmonic-ratio">1/4</div>
+                    <div class="harmonic-degree">VIII</div>
+                </div>
+                <div class="harmonic-value" id="harmonic3Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset3">R</button>
+                    <button class="harmonic-btn" id="mute3">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic4" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">4</div>
+                    <div class="harmonic-ratio">1/5</div>
+                    <div class="harmonic-degree">≈III</div>
+                </div>
+                <div class="harmonic-value" id="harmonic4Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset4">R</button>
+                    <button class="harmonic-btn" id="mute4">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic5" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">5</div>
+                    <div class="harmonic-ratio">1/6</div>
+                    <div class="harmonic-degree">V</div>
+                </div>
+                <div class="harmonic-value" id="harmonic5Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset5">R</button>
+                    <button class="harmonic-btn" id="mute5">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic6" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">6</div>
+                    <div class="harmonic-ratio">1/7</div>
+                    <div class="harmonic-degree">≈♭VII</div>
+                </div>
+                <div class="harmonic-value" id="harmonic6Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset6">R</button>
+                    <button class="harmonic-btn" id="mute6">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic7" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">7</div>
+                    <div class="harmonic-ratio">1/8</div>
+                    <div class="harmonic-degree">VIII</div>
+                </div>
+                <div class="harmonic-value" id="harmonic7Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset7">R</button>
+                    <button class="harmonic-btn" id="mute7">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic8" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">8</div>
+                    <div class="harmonic-ratio">1/9</div>
+                    <div class="harmonic-degree">II</div>
+                </div>
+                <div class="harmonic-value" id="harmonic8Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset8">R</button>
+                    <button class="harmonic-btn" id="mute8">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic9" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">9</div>
+                    <div class="harmonic-ratio">1/10</div>
+                    <div class="harmonic-degree">≈II</div>
+                </div>
+                <div class="harmonic-value" id="harmonic9Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset9">R</button>
+                    <button class="harmonic-btn" id="mute9">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic10" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">10</div>
+                    <div class="harmonic-ratio">1/11</div>
+                    <div class="harmonic-degree">≈IV</div>
+                </div>
+                <div class="harmonic-value" id="harmonic10Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset10">R</button>
+                    <button class="harmonic-btn" id="mute10">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic11" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">11</div>
+                    <div class="harmonic-ratio">1/12</div>
+                    <div class="harmonic-degree">V</div>
+                </div>
+                <div class="harmonic-value" id="harmonic11Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset11">R</button>
+                    <button class="harmonic-btn" id="mute11">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic12" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">12</div>
+                    <div class="harmonic-ratio">1/13</div>
+                    <div class="harmonic-degree">≈VI</div>
+                </div>
+                <div class="harmonic-value" id="harmonic12Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset12">R</button>
+                    <button class="harmonic-btn" id="mute12">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic13" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">13</div>
+                    <div class="harmonic-ratio">1/14</div>
+                    <div class="harmonic-degree">≈♭VII</div>
+                </div>
+                <div class="harmonic-value" id="harmonic13Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset13">R</button>
+                    <button class="harmonic-btn" id="mute13">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic14" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">14</div>
+                    <div class="harmonic-ratio">1/15</div>
+                    <div class="harmonic-degree">VII</div>
+                </div>
+                <div class="harmonic-value" id="harmonic14Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset14">R</button>
+                    <button class="harmonic-btn" id="mute14">M</button>
+                </div>
+            </div>
+
+            <div class="harmonic-fader">
+                <div class="fader-container">
+                    <input type="range" class="vertical" id="harmonic15" min="0" max="50" value="0">
+                </div>
+                <div class="harmonic-label">
+                    <div class="harmonic-number">15</div>
+                    <div class="harmonic-ratio">1/16</div>
+                    <div class="harmonic-degree">VIII</div>
+                </div>
+                <div class="harmonic-value" id="harmonic15Value">0</div>
+                <div class="harmonic-buttons">
+                    <button class="harmonic-btn" id="reset15">R</button>
+                    <button class="harmonic-btn" id="mute15">M</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="presets-column">
+            <div class="preset-group">
+                <div class="preset-label">Presets</div>
+                <button class="preset-btn" id="presetFlat">All Max</button>
+                <button class="preset-btn" id="presetZero">All Zero</button>
+                <button class="preset-btn" id="presetNatural">Natural</button>
+                <button class="preset-btn" id="presetWeird">Weird</button>
+                <button class="preset-btn" id="presetWeirdyWeird">Weirdy Weird</button>
+            </div>
+            <div class="preset-group">
+                <button class="preset-btn master-reset" id="systemReset">Reset</button>
+            </div>
+        </div>
+        </div>
+
+    </div>
+
+    <script>
+        let audioContext;
+        let limiter = null;
+        let masterGain = null;
+        let isPlaying = false;
+
+        // Store oscillators and their gains
+        const harmonics = [];
+        let baseFrequency;
+
+        // Per-harmonic gain at full fader, so the tone alone at master 50 keeps its previous loudness
+        const HEADROOM = 0.5;
+        // Time constant (s) for smoothing gain and frequency changes, avoids clicks and zipper noise
+        const SMOOTH = 0.015;
+
+        // Harmonic data: [multiplier, scale degree]
+        const harmonicData = [
+            { mult: 1, degree: '1' },      // T - fundamental
+            { mult: 2, degree: '8' },      // 1 - octave
+            { mult: 3, degree: '5' },      // 2 - fifth
+            { mult: 4, degree: '8' },      // 3 - octave
+            { mult: 5, degree: '3' },      // 4 - major third
+            { mult: 6, degree: '5' },      // 5 - fifth
+            { mult: 7, degree: '♭7' },     // 6 - minor seventh
+            { mult: 8, degree: '8' },      // 7 - octave
+            { mult: 9, degree: '2' },      // 8 - major second
+            { mult: 10, degree: '2' },     // 9 - major second
+            { mult: 11, degree: '4' },     // 10 - augmented fourth
+            { mult: 12, degree: '5' },     // 11 - fifth
+            { mult: 13, degree: '6' },     // 12 - major sixth
+            { mult: 14, degree: '♭7' },    // 13 - minor seventh
+            { mult: 15, degree: '7' },     // 14 - major seventh
+            { mult: 16, degree: '8' }      // 15 - octave
+        ];
+
+        const muteStates = new Array(16).fill(false);
+
+        function rampTo(param, value) {
+            param.setTargetAtTime(value, audioContext.currentTime, SMOOTH);
+        }
+
+        // Gain of one harmonic, independent of the master (the master is applied once, on masterGain)
+        function harmonicGain(index) {
+            if (muteStates[index]) return 0;
+            // Tone (index 0) uses /100, harmonics 1-15 use /50 (since their max is 50)
+            const maxValue = index === 0 ? 100 : 50;
+            return (document.getElementById(`harmonic${index}`).value / maxValue) * HEADROOM;
+        }
+
+        function applyHarmonicGain(index) {
+            if (harmonics[index]) {
+                rampTo(harmonics[index].gain.gain, harmonicGain(index));
+            }
+        }
+
+        function createHarmonicOscillator(index) {
+            const oscillator = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+
+            oscillator.type = 'sine';
+            oscillator.frequency.value = baseFrequency * harmonicData[index].mult;
+            gain.gain.value = harmonicGain(index);
+
+            oscillator.connect(gain);
+            gain.connect(masterGain);
+
+            oscillator.start();
+
+            return { oscillator, gain };
+        }
+
+        function setupAudio() {
+            // iOS: play through the silent switch (Safari 16.4+)
+            try {
+                if (navigator.audioSession) navigator.audioSession.type = 'playback';
+            } catch (e) {}
+
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Limiter so presets like All Max don't clip
+            limiter = audioContext.createDynamicsCompressor();
+            limiter.threshold.value = -3;
+            limiter.knee.value = 0;
+            limiter.ratio.value = 20;
+            limiter.attack.value = 0.003;
+            limiter.release.value = 0.25;
+
+            // The compressor adds automatic makeup gain (0.6 x its full-range reduction); cancel it
+            const makeupDb = -0.6 * limiter.threshold.value * (1 - 1 / limiter.ratio.value);
+            const trim = audioContext.createGain();
+            trim.gain.value = Math.pow(10, -makeupDb / 20);
+            limiter.connect(trim);
+            trim.connect(audioContext.destination);
+        }
+
+        function startHarmonics() {
+            baseFrequency = parseFloat(document.getElementById('baseFreq').value);
+
+            masterGain = audioContext.createGain();
+            const targetVolume = document.getElementById('masterVertical').value / 100;
+
+            // Start silent and fade in (~100ms) to prevent clicks; setTargetAtTime also accepts 0
+            masterGain.gain.value = 0;
+            masterGain.connect(limiter);
+
+            // Create all 16 harmonics
+            for (let i = 0; i < 16; i++) {
+                harmonics[i] = createHarmonicOscillator(i);
+            }
+
+            masterGain.gain.setTargetAtTime(targetVolume, audioContext.currentTime, 0.02);
+        }
+
+        function stopHarmonics() {
+            if (!masterGain) return;
+
+            // Detach this voice right away so a quick restart gets its own oscillators
+            const oldGain = masterGain;
+            const oldHarmonics = harmonics.splice(0);
+            masterGain = null;
+
+            // Fade out to prevent clicks, then stop these oscillators only
+            const now = audioContext.currentTime;
+            oldGain.gain.setTargetAtTime(0, now, 0.03);
+            oldHarmonics.forEach(h => h.oscillator.stop(now + 0.25));
+            oldHarmonics[0].oscillator.onended = () => oldGain.disconnect();
+        }
+
+        function updateFrequencies() {
+            for (let i = 0; i < harmonics.length; i++) {
+                if (harmonics[i]) {
+                    rampTo(harmonics[i].oscillator.frequency, baseFrequency * harmonicData[i].mult);
+                }
+            }
+        }
+
+        function togglePlay() {
+            const toggle = document.getElementById('toggle');
+            if (!audioContext) {
+                setupAudio();
+            }
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+
+            if (!isPlaying) {
+                startHarmonics();
+                toggle.textContent = 'Stop';
+                toggle.classList.add('active');
+                isPlaying = true;
+            } else {
+                stopHarmonics();
+                toggle.textContent = 'Start';
+                toggle.classList.remove('active');
+                isPlaying = false;
+            }
+        }
+
+        document.getElementById('toggle').addEventListener('click', togglePlay);
+
+        // Master volume control (vertical)
+        document.getElementById('masterVertical').addEventListener('input', function(e) {
+            document.getElementById('masterVerticalValue').textContent = e.target.value;
+            if (masterGain) {
+                rampTo(masterGain.gain, e.target.value / 100);
+            }
+        });
+
+        // Helper function to update harmonic value and gain
+        function setHarmonicValue(index, value) {
+            document.getElementById(`harmonic${index}`).value = value;
+            document.getElementById(`harmonic${index}Value`).textContent = value;
+            applyHarmonicGain(index);
+        }
+
+        // R button on Master - resets all harmonics to 0 volume
+        document.getElementById('masterReset').addEventListener('click', function() {
+            for (let i = 0; i < 16; i++) {
+                setHarmonicValue(i, 0);
+            }
+        });
+
+        // Individual harmonic volume controls
+        for (let i = 0; i < 16; i++) {
+            document.getElementById(`harmonic${i}`).addEventListener('input', function(e) {
+                document.getElementById(`harmonic${i}Value`).textContent = e.target.value;
+                applyHarmonicGain(i);
+            });
+        }
+
+        // Base frequency control
+        document.getElementById('baseFreq').addEventListener('input', function(e) {
+            baseFrequency = parseFloat(e.target.value);
+            document.getElementById('baseFreqValue').textContent = e.target.value;
+            updateFrequencies();
+        });
+
+        // Spacebar control for start/stop, once per press
+        document.addEventListener('keydown', function(e) {
+            if (e.code !== 'Space') return;
+            e.preventDefault();
+            if (e.repeat) return;
+            togglePlay();
+        });
+
+        // Stop a focused button from also firing its own click on key release
+        document.addEventListener('keyup', function(e) {
+            if (e.code === 'Space') e.preventDefault();
+        });
+
+        // Back from a hidden tab: if the system suspended the audio, show Start again
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState !== 'visible' || !isPlaying || !audioContext) return;
+            if (audioContext.state !== 'running') togglePlay();
+        });
+
+        // Menu panel: icon toggles, click outside or Escape closes
+        const menuBtn = document.getElementById('menuBtn');
+        const panel = document.getElementById('panel');
+
+        function setPanel(open) {
+            panel.hidden = !open;
+            menuBtn.setAttribute('aria-expanded', String(open));
+        }
+
+        menuBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            setPanel(panel.hidden);
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!panel.hidden && !panel.contains(e.target)) setPanel(false);
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !panel.hidden) setPanel(false);
+        });
+
+        // Preset buttons
+        document.getElementById('presetFlat').addEventListener('click', function() {
+            for (let i = 0; i < 16; i++) {
+                // T gets 100, harmonics 1-15 get 50
+                setHarmonicValue(i, i === 0 ? 100 : 50);
+            }
+        });
+
+        document.getElementById('presetZero').addEventListener('click', function() {
+            // Start at i=1 to skip T (harmonic0)
+            for (let i = 1; i < 16; i++) {
+                setHarmonicValue(i, 0);
+            }
+        });
+
+        document.getElementById('presetNatural').addEventListener('click', function() {
+            // Natural preset values from the reference image
+            const naturalValues = [100, 41, 33, 25, 20, 15, 11, 8, 6, 5, 4, 4, 4, 4, 3, 2];
+
+            for (let i = 0; i < 16; i++) {
+                setHarmonicValue(i, naturalValues[i]);
+            }
+        });
+
+        document.getElementById('presetWeird').addEventListener('click', function() {
+            for (let i = 0; i < 16; i++) {
+                // T: 10, harmonics: 5 to 50 over 15 steps
+                const value = i === 0 ? 10 : Math.round(5 + ((i - 1) * 3));
+                setHarmonicValue(i, value);
+            }
+        });
+
+        document.getElementById('presetWeirdyWeird').addEventListener('click', function() {
+            // Weirdy Weird preset values
+            const weirdyWeirdValues = [100, 0, 0, 0, 8, 0, 9, 0, 0, 9, 7, 0, 10, 13, 0, 0];
+
+            for (let i = 0; i < 16; i++) {
+                setHarmonicValue(i, weirdyWeirdValues[i]);
+            }
+        });
+
+        // Mute keeps the fader where it is, so unmuting simply reads the fader again
+        function setMute(index, muted) {
+            muteStates[index] = muted;
+            document.getElementById(`mute${index}`).classList.toggle('active', muted);
+            applyHarmonicGain(index);
+            updateMasterMuteButton();
+        }
+
+        // Master M is lit when all harmonics (excluding T) are muted
+        function updateMasterMuteButton() {
+            const allMuted = muteStates.slice(1).every(state => state);
+            document.getElementById('masterMute').classList.toggle('active', allMuted);
+        }
+
+        // M button on Master - mutes all harmonics (excluding T/harmonic0), or unmutes them if all are muted
+        document.getElementById('masterMute').addEventListener('click', function() {
+            const allMuted = muteStates.slice(1).every(state => state);
+            for (let i = 1; i < 16; i++) {
+                setMute(i, !allMuted);
+            }
+        });
+
+        // Mute and Reset buttons for each harmonic
+        for (let i = 0; i < 16; i++) {
+            // Reset button - sets fader back to 0
+            document.getElementById(`reset${i}`).addEventListener('click', function() {
+                setHarmonicValue(i, 0);
+            });
+
+            // Mute button - toggles mute state
+            document.getElementById(`mute${i}`).addEventListener('click', function() {
+                setMute(i, !muteStates[i]);
+            });
+        }
+
+        // Store initial state
+        const initialState = {
+            baseFreq: 100,
+            masterVolume: 50,
+            harmonics: [100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        };
+
+        // System Reset button - restores initial state
+        document.getElementById('systemReset').addEventListener('click', function() {
+            // Stop audio if playing
+            if (isPlaying) {
+                togglePlay();
+            }
+
+            // Reset base frequency
+            document.getElementById('baseFreq').value = initialState.baseFreq;
+            document.getElementById('baseFreqValue').textContent = initialState.baseFreq;
+            baseFrequency = initialState.baseFreq;
+
+            // Reset master volume
+            document.getElementById('masterVertical').value = initialState.masterVolume;
+            document.getElementById('masterVerticalValue').textContent = initialState.masterVolume;
+
+            // Reset all harmonics and unmute
+            for (let i = 0; i < 16; i++) {
+                setHarmonicValue(i, initialState.harmonics[i]);
+                setMute(i, false);
+            }
+        });
+
+        // Initialize display values immediately
+        (function() {
+            baseFrequency = parseFloat(document.getElementById('baseFreq').value);
+            document.getElementById('baseFreqValue').textContent = baseFrequency;
+            document.getElementById('masterVerticalValue').textContent = document.getElementById('masterVertical').value;
+
+            for (let i = 0; i < 16; i++) {
+                document.getElementById(`harmonic${i}Value`).textContent = document.getElementById(`harmonic${i}`).value;
+            }
+        })();
+    </script>
+</body>
+</html>
